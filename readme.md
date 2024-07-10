@@ -22,7 +22,7 @@
 ## 后续
 
 - 更多翻译源
-  - 懒，自己clone，[github]()
+  - 懒，自己clone，[github](https://github.com/kuloutiantang/namingInPlace-uTools)
 - 百度翻译api不失效我大概率不会更新的
 - 剪贴板模式
   - 这个倒是有可能会更，看我什么时候真遇到实际需要吧
