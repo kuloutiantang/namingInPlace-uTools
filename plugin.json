@@ -1,0 +1,27 @@
+{
+	"preload": "preload.js",
+	"logo": "logo.png",
+	"features": [
+		{
+			"code": "names",
+			"explain": "命名",
+			"icon": "logo.png",
+			"cmds": [
+				{
+					"type": "over",
+					"label": "命名",
+					"minLength": 1,
+					"maxLength": 500
+				}
+			]
+		},
+		{
+			"code": "set",
+			"explain": "原地命名设置",
+			"icon": "icon/set.png",
+			"cmds": [
+				"原地命名设置"
+			]
+		}
+	]
+}
