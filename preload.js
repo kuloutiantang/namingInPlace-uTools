@@ -4,8 +4,17 @@
 let input_key = "";
 let input_value = "";
 
+// 加载
+const db = window.utools.dbStorage;
+
+const quit = () => {
+	// console.log("插件退出");
+	window.utools.outPlugin();
+};
 // 字符处理
-let codeName = (text, type) => {
+const codeName = (text, type) => {
+	// 为已经转换过的字符串添加空格
+	text = text.replace(/([a-z])([A-Z])/g, "$1 $2");
 	if (type == "UpperCamelCase") {
 		// 大驼峰：常用于类名
 		const words = text
@@ -50,6 +59,18 @@ let codeName = (text, type) => {
 			result += "-" + words[i]; // 遍历剩余的单词，在每个单词前添加“-”并拼接至结果字符串
 		}
 		return result;
+	} else if (type == "UPPERCASE") {
+		// 全大写，不含空格
+		return text.toUpperCase().replace(/ /g, "");
+	} else if (type == "UPPERCASE WITH SPACE") {
+		// 全大写
+		return text.toUpperCase();
+	} else if (type == "lowercase") {
+		// 全小写，不含空格
+		return text.toLowerCase().replace(/ /g, "");
+	} else if (type == "lowercase with space") {
+		// 全小写
+		return text.toLowerCase();
 	} else {
 		// 默认：小驼峰
 		const words = text
@@ -63,136 +84,190 @@ let codeName = (text, type) => {
 		return result;
 	}
 };
+const strHasCn = (str) => {
+	const regex = /[\u4e00-\u9fa5]/;
+	return regex.test(str);
+};
+// 翻译
+const translate = (str, engine, AppId, Key, namingFormat) => {
+	if (engine == "google") {
+		// 谷歌翻译，再说
+		quit();
+	} else if (engine == "?") {
+		// 其他翻译
+		quit();
+	} else if (engine == "youdao") {
+		// 有道翻译
+		let salt = "salt";
+		let input = str.length > 20 ? str.substring(0, 10) + str.length + str.substring(str.length - 10) : str;
+		let timestamp = Math.floor(Date.now() / 1000);
+		let to_be_encrypted = AppId + input + salt + timestamp + Key;
+		const crypto = require("crypto");
+		let sha256 = crypto.createHash("sha256");
+		let sign = sha256.update(to_be_encrypted).digest("hex");
+		let url =
+			"https://openapi.youdao.com/api" +
+			"?q=" +
+			str +
+			"&from=auto&to=en" +
+			"&appKey=" +
+			AppId +
+			"&salt=" +
+			salt +
+			"&sign=" +
+			sign +
+			"&signType=v3" +
+			"&curtime=" +
+			timestamp;
+		// 发起请求
+		const https = require("https");
+		https
+			.get(url, (response) => {
+				let result = "";
+				response.on("data", (chunk) => {
+					result += chunk;
+				});
+				response.on("end", () => {
+					let res = JSON.parse(result);
+					let print = "";
+					if (res.errorCode == "0") {
+						// 翻译结果
+						print = codeName(res.translation[0], namingFormat);
+					} else {
+						// 错误码
+						print = "翻译错误：" + result + "。请检查设置或网络。";
+					}
+					window.utools.hideMainWindowTypeString(print);
+					quit();
+				});
+			})
+			.on("error", (error) => {
+				window.utools.hideMainWindowTypeString("命名失败：" + error.message);
+				quit();
+			});
+	} else {
+		// 默认：百度翻译
+		let salt = "salt"; // 随机字符串就免了
+		let to_be_encrypted = AppId + str + salt + Key;
+		const crypto = require("crypto");
+		let md5 = crypto.createHash("md5");
+		let sign = md5.update(to_be_encrypted).digest("hex");
+		let url =
+			"https://fanyi-api.baidu.com/api/trans/vip/translate" +
+			"?q=" +
+			encodeURIComponent(str) +
+			"&from=auto&to=en" +
+			"&appid=" +
+			AppId +
+			"&salt=" +
+			salt +
+			"&sign=" +
+			sign;
+		// 发起请求
+		const https = require("https");
+		https
+			.get(url, (response) => {
+				let result = "";
+				response.on("data", (chunk) => {
+					result += chunk;
+				});
+				response.on("end", () => {
+					let res = JSON.parse(result);
+					let print = "";
+					if (res.error_code) {
+						// 错误码
+						print = "翻译错误：" + result + "。请检查设置或网络。";
+					} else {
+						// 翻译结果
+						print = codeName(res.trans_result[0].dst, namingFormat);
+					}
+					console.log(print);
+					window.utools.hideMainWindowTypeString(print);
+					quit();
+				});
+			})
+			.on("error", (error) => {
+				console.log(error);
+				window.utools.hideMainWindowTypeString("命名失败：" + error.message);
+				quit();
+			});
+	}
+};
 
 window.exports = {
 	names: {
-		mode: "none",
+		mode: "list",
 		args: {
-			enter: (action) => {
+			enter: (action, callbackSetList) => {
 				// 传入参数
-				let incomingParameters = action.payload;
-
+				const incomingParameters = action.payload;
 				// 本地数据库
-				let namingFormat, translationEngine, AppId, Key;
-				namingFormat = window.utools.dbStorage.getItem("namingFormat") ? window.utools.dbStorage.getItem("namingFormat") : "lowerCamelCase";
-				translationEngine = window.utools.dbStorage.getItem("translationEngine")
-					? window.utools.dbStorage.getItem("translationEngine")
-					: "baidu";
-				AppId = window.utools.dbStorage.getItem(translationEngine + "AppId");
-				Key = window.utools.dbStorage.getItem(translationEngine + "Key");
-
-				// 翻译
-				if (translationEngine == "google") {
-					// 谷歌翻译，我没key，不接
-					window.utools.outPlugin();
-				} else if (translationEngine == "?") {
-					// 其他翻译
-					window.utools.outPlugin();
-				} else if (translationEngine == "youdao") {
-					// 有道翻译
-					let salt = "salt";
-					let input =
-						incomingParameters.length > 20
-							? incomingParameters.substring(0, 10) + incomingParameters.length + incomingParameters.substring(str.length - 10)
-							: incomingParameters;
-					let timestamp = Math.floor(Date.now() / 1000);
-					let to_be_encrypted = AppId + input + salt + timestamp + Key;
-					const crypto = require("crypto");
-					let sha256 = crypto.createHash("sha256");
-					let sign = sha256.update(to_be_encrypted).digest("hex");
-					let url =
-						"https://openapi.youdao.com/api" +
-						"?q=" +
-						incomingParameters +
-						"&from=auto&to=en" +
-						"&appKey=" +
-						AppId +
-						"&salt=" +
-						salt +
-						"&sign=" +
-						sign +
-						"&signType=v3" +
-						"&curtime=" +
-						timestamp;
-					// 发起请求
-					const https = require("https");
-					https
-						.get(url, (response) => {
-							let result = "";
-							response.on("data", (chunk) => {
-								result += chunk;
-							});
-							response.on("end", () => {
-								let res = JSON.parse(result);
-								if (res.errorCode == "0") {
-									// 翻译结果
-									let print = codeName(res.translation[0], namingFormat);
-									window.utools.hideMainWindowTypeString(print);
-									window.utools.outPlugin();
-								} else {
-									// 错误码
-									let print = "翻译错误：" + result + "。请检查设置或网络。";
-									window.utools.hideMainWindowTypeString(print);
-									window.utools.outPlugin();
-								}
-							});
-						})
-						.on("error", (error) => {
-							window.utools.hideMainWindowTypeString("命名失败：" + error.message);
-							window.utools.outPlugin();
-						});
+				const namingFormat = db.getItem("namingFormat") ? db.getItem("namingFormat") : "lowerCamelCase"; // 命名格式
+				const translationEngine = db.getItem("translationEngine") ? db.getItem("translationEngine") : "baidu"; // 翻译引擎
+				const AppId = db.getItem(translationEngine + "AppId"); // 翻译引擎AppId
+				const Key = db.getItem(translationEngine + "Key"); // 翻译引擎Key
+				// 检测是否包含中文
+				const isCn = strHasCn(incomingParameters);
+				if (isCn) {
+					// 包含中文，翻译
+					callbackSetList([]);
+					translate(incomingParameters, translationEngine, AppId, Key, namingFormat);
 				} else {
-					// 默认：百度翻译
-					let salt = "salt"; // 随机字符串就免了
-					let to_be_encrypted = AppId + incomingParameters + salt + Key;
-					const crypto = require("crypto");
-					let md5 = crypto.createHash("md5");
-					let sign = md5.update(to_be_encrypted).digest("hex");
-					let url =
-						"https://fanyi-api.baidu.com/api/trans/vip/translate" +
-						"?q=" +
-						encodeURIComponent(incomingParameters) +
-						"&from=auto&to=en" +
-						"&appid=" +
-						AppId +
-						"&salt=" +
-						salt +
-						"&sign=" +
-						sign;
-					// 发起请求
-					const https = require("https"); // 引别的还要自己安装，基础库够用。你utools怎么不内置一个http请求？
-					https
-						.get(url, (response) => {
-							let result = "";
-							response.on("data", (chunk) => {
-								result += chunk;
-							});
-							response.on("end", () => {
-								let res = JSON.parse(result);
-								if (res.error_code) {
-									// 错误码
-									let print = "翻译错误：" + result + "。请检查设置或网络。";
-									window.utools.hideMainWindowTypeString(print);
-									window.utools.outPlugin();
-								} else {
-									// 翻译结果
-									let print = codeName(res.trans_result[0].dst, namingFormat);
-									window.utools.hideMainWindowTypeString(print);
-									window.utools.outPlugin();
-								}
-							});
-						})
-						.on("error", (error) => {
-							window.utools.hideMainWindowTypeString("命名失败：" + error.message);
-							window.utools.outPlugin();
-						});
+					// 不包含中文，改变命名格式
+					console.log("不包含中文:", incomingParameters);
+					callbackSetList([
+						{
+							title: codeName(incomingParameters, "lowerCamelCase"),
+							description: "小驼峰",
+						},
+						{
+							title: codeName(incomingParameters, "UpperCamelCase"),
+							description: "大驼峰",
+						},
+						{
+							title: codeName(incomingParameters, "snake_case"),
+							description: "蛇形",
+						},
+						{
+							title: codeName(incomingParameters, "UPPER_SNAKE_CASE"),
+							description: "大写蛇形",
+						},
+						{
+							title: codeName(incomingParameters, "kebab-case"),
+							description: "烤肉串式",
+						},
+						{
+							title: codeName(incomingParameters, "UPPERCASE"),
+							description: "全大写，不含空格",
+						},
+						{
+							title: codeName(incomingParameters, "UPPERCASE WITH SPACE"),
+							description: "全大写",
+						},
+						{
+							title: codeName(incomingParameters, "lowercase with space"),
+							description: "全小写，不含空格",
+						},
+						{
+							title: codeName(incomingParameters, "lowercase"),
+							description: "全小写",
+						},
+					]);
 				}
 			},
+			// 用户选择列表中某个条目时被调用
+			select: (action, itemData) => {
+				window.utools.hideMainWindowTypeString(itemData.title);
+				quit();
+			},
+			// 子输入框为空时的占位符，默认为字符串"搜索"
+			placeholder: "翻译中……",
 		},
 	},
 	set: {
 		mode: "list",
 		args: {
+			// 进入插件应用时调用（可选）
 			enter: (action, callbackSetList) => {
 				callbackSetList([
 					{
@@ -214,7 +289,7 @@ window.exports = {
 				if (itemData.module == 1) {
 					// 顶级选项
 					if (itemData.type == "setNamingFormat") {
-						let oldNamingFormat = window.utools.dbStorage.getItem("namingFormat");
+						let oldNamingFormat = db.getItem("namingFormat");
 						callbackSetList([
 							{
 								title: "小驼峰" + (oldNamingFormat == "lowerCamelCase" ? " (已选)" : ""),
@@ -248,7 +323,7 @@ window.exports = {
 							},
 						]);
 					} else if (itemData.type == "setUpTranslationEngine") {
-						let oldTranslationEngine = window.utools.dbStorage.getItem("translationEngine");
+						let oldTranslationEngine = db.getItem("translationEngine");
 						callbackSetList([
 							{
 								title: "百度翻译" + (oldTranslationEngine == "baidu" ? " (已选)" : ""),
@@ -266,8 +341,8 @@ window.exports = {
 					}
 				} else if (itemData.module == 3) {
 					// 设置命名格式
-					window.utools.dbStorage.setItem("namingFormat", itemData.type);
-					window.utools.outPlugin();
+					db.setItem("namingFormat", itemData.type);
+					quit();
 				} else if (itemData.module == 2) {
 					// 选择引擎
 					if (itemData.type == "baidu") {
@@ -313,8 +388,8 @@ window.exports = {
 					}
 				} else if (itemData.module == 4) {
 					// 设置翻译引擎
-					window.utools.dbStorage.setItem("translationEngine", itemData.type);
-					window.utools.outPlugin();
+					db.setItem("translationEngine", itemData.type);
+					quit();
 				} else if (itemData.module == 5) {
 					// 设置输入框
 					input_key = itemData.type;
@@ -336,10 +411,10 @@ window.exports = {
 				} else if (itemData.module == 6) {
 					// 输入
 					if (itemData.type == "save") {
-						window.utools.dbStorage.setItem(input_key, input_value);
-						window.utools.outPlugin();
+						db.setItem(input_key, input_value);
+						quit();
 					} else {
-						window.utools.outPlugin();
+						quit();
 					}
 				}
 			},
